@@ -1,0 +1,22 @@
+{
+  "id": "neodex.yams",
+  "name": "Yams",
+  "version": "1.0.0",
+  "author": "NDesumeur",
+  "description": "Cinq dés, trois lancers par tour et treize cases à remplir. 63 points en haut de la feuille donnent 35 de bonus.",
+  "icon": "icon.png",
+  "entry": "index.js",
+  "view": "yams",
+  "neobase": ">=4.0.0",
+  "type": "app",
+  "category": "Jeux",
+  "syncMode": "progression",
+  "syncInfo": "Meilleur total, Yams réussis.",
+  "mobile": false,
+  "system": false,
+  "dependencies": {},
+  "sdk": "2.1.0",
+  "permissions": [
+    "storage"
+  ]
+}
