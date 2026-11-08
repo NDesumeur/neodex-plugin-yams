@@ -1,7 +1,7 @@
 {
   "id": "neodex.yams",
   "name": "Yams",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "NDesumeur",
   "description": "Le jeu de dés en solo : cinq dés, trois lancers par tour en gardant ceux que tu veux, et treize cases à remplir (chiffres, brelan, carré, full, suites, Yams, chance). La feuille montre ce que rapporterait chaque case, 63 points en haut donnent 35 de bonus, et une case peut être sacrifiée à 0. Au clavier ou à la souris ; meilleur total et Yams réussis synchronisés.",
   "icon": "icon.png",
