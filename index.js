@@ -1,5 +1,5 @@
 // Yams : Cinq dés, trois lancers par tour et treize cases à remplir. 63 points en haut de la feuille donnent 35 de bonus.
-// Jeu NeoDex en pixel art dessiné à la main (police bitmap, cadres et boutons en pixels). Il tourne dans le bac à sable de NeoDex.
+// Jeu NeoDex : police, cadres et boutons propres au jeu. Il tourne dans le bac à sable de NeoDex.
 const HTML = `<div class="appWrap wide">
   <div class="agHead"><span class="label">Yams</span><span class="hint">Clic sur LANCER (ou espace) · clic sur un dé (ou 1-5) : le garder · clic sur une case : marquer</span></div>
   <div class="gMain"><div class="gameBox"><canvas id="gc" width="288" height="216"></canvas></div>
