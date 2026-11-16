@@ -1,9 +1,9 @@
 {
   "pluginId": "neodex.yams",
   "repo": "NDesumeur/neodex-plugin-yams",
-  "version": "1.0.1",
-  "sha256": "b29f63519a3c4db0bcb9de28753072e52e4cc9c20d38fcaf5c3e30a391377998",
-  "approvedAt": "2026-11-08T12:10:50.945Z",
+  "version": "1.0.2",
+  "sha256": "8a596c1f8c3704c2b32c770952db479deef3ae94dddf91f9ab87defd05b3e45e",
+  "approvedAt": "2026-11-16T16:38:52.481Z",
   "neobase": ">=4.0.0",
-  "signature": "8vStsi65wZEImry35OIYit/KeUyI3SbmMUfioh3pWWhwZMe0CzhHSHo050lK0W8iKndwgo2EREN5qCwsvzMmDQ=="
+  "signature": "jJDXG4o36aDVm2UOEi8VLKbTyH8lA9pT4HyVpAkCc6Pbya+uWOTkgJ42EBujpXRR/ia3yQ+DfcbQ2CaBPSbTCA=="
 }
