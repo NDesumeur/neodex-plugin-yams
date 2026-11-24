@@ -1,8 +1,16 @@
 # Yams
 
-The classic dice game, solo: five dice, three rolls per turn and thirteen boxes to fill on the score sheet. Aim for the highest total, with a 35-point bonus if the upper section reaches 63.
+The classic dice game, solo, against the computer or up to 4 players on the same PC: five dice, three rolls per turn and thirteen boxes to fill on the score sheet. Aim for the highest total, with a 35-point bonus if the upper section reaches 63.
 
 *Version française : [README.md](README.md)*
+
+## Remote Yams (new in 1.2.0)
+
+Play Yams against a friend on another PC with a 6-letter code: each one rolls their dice at home, you see their dice and boxes live. Also: a gold line under kept dice, and no more stuck game when coming back from another tab.
+
+## Multiplayer (new in 1.1.0)
+
+The **Players** menu offers: solo (the record counts), against the computer, or 2 to 4 players on the same PC. Each player has a column on the sheet, the current player's is highlighted and the turn passes after each box scored. At the top, the bonus shows how much is missing to reach 63. At the end, the winner is announced. The computer keeps nearly finished straights or its most common dice, and scores the box that pays best compared to usual. Wins and losses against it are counted separately.
 
 ## Controls
 
@@ -49,3 +57,14 @@ Your record and statistics are stored by NeoDex, backed up and synced between yo
 In NeoDex: **NeoStore → Discover → Yams → Install**.
 
 Building a plugin: see the [NeoDex SDK](https://github.com/NDesumeur/neodex-sdk).
+
+## Remote play (1.2.0)
+
+In **Players**, choose **Online (with a code)**:
+
+- **CREATE A GAME** gives a 6-letter code. Your friend types it and clicks **JOIN**.
+- Each one has their column on the sheet. Whoever created the game starts first, then you take turns starting at each rematch.
+- During your friend’s turn, you see their dice, the ones they keep and the box they score.
+- Only the dice and boxes go through the NeoDex server, nothing else from your PC. Remote records are counted separately.
+
+Also: a gold line under kept dice (the word “kept” overlapped) and the game no longer stays stuck when you come back from another tab.

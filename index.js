@@ -6,6 +6,8 @@ const HTML = `<div class="appWrap wide">
     <div class="gSide">
       <div class="sysCard"><b>RECORDS</b><div class="gStats" id="gStats"></div></div>
       <div class="row"><button class="btn main" id="gNew">NOUVELLE PARTIE</button></div>
+      <label class="row">Joueurs <select id="yaMode" class="f"><option value="solo">Seul</option><option value="ia">Contre l'ordinateur</option><option value="2">2 joueurs sur ce PC</option><option value="3">3 joueurs sur ce PC</option><option value="4">4 joueurs sur ce PC</option><option value="net">À distance (par un code)</option></select></label>
+      <div id="yaNet" style="display:none"><div class="row"><button class="btn" id="yaHost">CRÉER UNE PARTIE</button></div><div class="row"><input class="f" id="yaCode" placeholder="CODE" maxlength="8" autocomplete="off" spellcheck="false" style="max-width:110px;text-transform:uppercase"><button class="btn" id="yaJoin">REJOINDRE</button></div><div class="hint" id="yaNetInfo"></div></div>
       
       <div class="hint">La feuille montre en vert ce que chaque case rapporterait avec les dés du moment.</div><div class="hint">Une case peut être barrée à 0 si rien ne va : choisis bien laquelle sacrifier.</div>
     </div></div>
@@ -301,7 +303,7 @@ function gameLoop(st, appKey, update, draw) {
   cancelAnimationFrame(st.raf);
   const STEP = 1000 / 60; let acc = 0, last = performance.now();
   const frame = t => {
-    if (!view.classList.contains('on')) { st.raf = 0; if (st.mode === 'play') st.mode = 'pause'; return; }  // leaving the tab pauses the game
+    if (!view.classList.contains('on')) { st.raf = 0; return; }  // onglet quitté : la boucle s'arrête (jeu au tour par tour : rien à mettre en pause, et les coups d'un ami à distance continuent d'arriver)
     st.raf = requestAnimationFrame(frame);
     acc += Math.min(200, t - last); last = t;
     while (acc >= STEP) { if (st.mode === 'play') update(); st.tick++; acc -= STEP; }
@@ -338,21 +340,66 @@ function yaScore(cat, d) {
 }
 const yaUpper = s => s.slice(0, 6).reduce((a, v) => a + (v ?? 0), 0);
 const yaTotal = s => s.reduce((a, v) => a + (v ?? 0), 0) + (yaUpper(s) >= 63 ? 35 : 0);
-const yas = gstore('yams', {games: 0, yams: 0});
+const yas = gstore('yams', {games: 0, yams: 0}); yas.mode ??= 'solo'; yas.multi ??= 0; yas.vs ??= {w: 0, l: 0, d: 0};
+// à plusieurs : chacun sa colonne sur la feuille, on passe la main après chaque case marquée ; ya.sheet est toujours la feuille du joueur en cours
+const YA_MODES = {solo: ['Toi'], ia: ['Toi', 'Ordi'], 2: ['J1', 'J2'], 3: ['J1', 'J2', 'J3'], 4: ['J1', 'J2', 'J3', 'J4'], net: ['Toi', 'Ami']};
+yas.net ??= {w: 0, l: 0, d: 0};
+if (yas.mode === 'net') yas.mode = 'solo';  // une partie à distance ne survit pas à la fermeture
+// à distance : deux PC, une partie par un code (ctx.room, serveur NeoDex). L'hôte a la colonne de gauche ; il commence la première partie, puis on alterne à chaque revanche.
+// Chacun lance ses dés chez lui : seuls passent les dés tirés ({t:'roll', dice, keep}), les dés gardés ({t:'keep', keep}) et la case marquée ({t:'pick', cat}).
+const net = {code: '', me: 0, host: false, opp: '', oppId: '', first: 0};
+const netOn = () => yas.mode === 'net' && !!net.opp;
+const netSay = t => { $('yaNetInfo').textContent = t; };
+const netSend = m => { if (netOn()) ctx.room.send(m).catch(e => toast(e.message, true)); };
+const yaDiceOk = d => Array.isArray(d) && d.length === 5 && d.every(v => Number.isInteger(v) && v >= 1 && v <= 6);
+const yaKeepOk = k => Array.isArray(k) && k.length === 5 && k.every(v => v === 0 || v === 1);
+const YA_PAR = [2, 5, 8, 11, 14, 17, 15, 8, 12, 15, 10, 8, 22];  // ce qu'une case rapporte d'habitude : l'ordinateur compare à ça
+function yaAiKeep(d, sheet) {  // l'ordinateur garde une suite presque faite, sinon la valeur qu'il a le plus
+  const n = [0, 0, 0, 0, 0, 0, 0]; d.forEach(v => n[v]++);
+  if (sheet[10] === null || sheet[9] === null) for (const run of [[2, 3, 4, 5, 6], [1, 2, 3, 4, 5], [3, 4, 5, 6], [2, 3, 4, 5], [1, 2, 3, 4]]) if (run.filter(v => n[v]).length >= Math.min(4, run.length)) { const seen = new Set(); return d.map(v => run.includes(v) && !seen.has(v) && seen.add(v) ? 1 : 0); }
+  let best = 6; for (let v = 6; v >= 1; v--) if (n[v] > n[best]) best = v;
+  return d.map(v => v === best ? 1 : 0);
+}
+function yaAiPick(d, sheet) {  // la case qui rapporte le plus par rapport à d'habitude (et le bonus du haut en vue)
+  let bc = -1, bv = -1e9; for (let c = 0; c < 13; c++) { if (sheet[c] !== null) continue; const sc = yaScore(c, d), v = sc - YA_PAR[c] + (c < 6 && sc >= 3 * (c + 1) ? 6 : 0) - (sc === 0 ? [1, 2, 3, 4, 5, 6, 9, 3, 6, 8, 4, 0, 20][c] : 0); if (v > bv) { bv = v; bc = c; } }
+  return bc;
+}
 let ya = null;
 const YA = {DX: 10, DY: 84, DS: 24, SX: 150, SY: 6, RH: 12};
-function yaNew() { ya = Object.assign(ya || {tick: 0, raf: 0}, {mode: 'play', dice: [1, 2, 3, 4, 5], keep: [0, 0, 0, 0, 0], rolls: 0, sheet: Array(13).fill(null), rollAt: -99, hover: -1, lastCat: -1, overAt: 0}); yaInfo(); }
-function yaRoll() {
-  if (ya.mode !== 'play' || ya.rolls >= 3 || ya.tick - ya.rollAt < 14) return;
-  ya.dice = ya.dice.map((v, i) => ya.keep[i] ? v : 1 + Math.floor(Math.random() * 6)); ya.rolls++; ya.rollAt = ya.tick;
+function yaNew(first = 0) {
+  const names = yas.mode === 'net' ? (net.me ? ['Ami', 'Toi'] : ['Toi', 'Ami']) : YA_MODES[yas.mode] || YA_MODES.solo;
+  const players = names.map(name => ({name, ai: name === 'Ordi', sheet: Array(13).fill(null)}));
+  ya = Object.assign(ya || {tick: 0, raf: 0}, {mode: yas.mode === 'net' && !net.opp ? 'wait' : 'play', dice: [1, 2, 3, 4, 5], keep: [0, 0, 0, 0, 0], rolls: 0, players, cur: first, sheet: players[first].sheet, rollAt: -99, hover: -1, lastCat: -1, lastBy: 0, overAt: 0, aiAt: 0}); yaInfo(); }
+const yaAiTurn = () => ya.mode === 'play' && ya.players[ya.cur].ai;
+const yaMine = () => ya.mode === 'play' && !ya.players[ya.cur].ai && (yas.mode !== 'net' || netOn() && ya.cur === net.me);  // à toi de jouer (à distance : seulement à ton tour)
+function yaUpdate() {  // le tour de l'ordinateur : il lance, garde, relance, puis marque, sans se presser
+  if (!yaAiTurn() || ya.tick < ya.aiAt || ya.tick - ya.rollAt < 14) return;
+  ya.aiAt = ya.tick + 45;
+  if (ya.rolls === 0) return yaRoll();
+  const k = yaAiKeep(ya.dice, ya.sheet), done = yaScore(11, ya.dice) || (ya.sheet[10] === null && yaScore(10, ya.dice)) || (ya.sheet[8] === null && yaScore(8, ya.dice));
+  if (ya.rolls < 3 && !done && k.some(v => !v)) { ya.keep = k; return yaRoll(); }
+  yaPick(yaAiPick(ya.dice, ya.sheet));
+}
+function yaRoll(got) {  // got : les dés tirés par l'ami, chez lui
+  if (ya.mode !== 'play' || ya.rolls >= 3 || (!got && ya.tick - ya.rollAt < 14)) return;
+  ya.dice = got || ya.dice.map((v, i) => ya.keep[i] ? v : 1 + Math.floor(Math.random() * 6)); ya.rolls++; ya.rollAt = ya.tick;
+  if (!got && yas.mode === 'net') netSend({t: 'roll', dice: ya.dice, keep: ya.keep});
   for (let i = 0; i < 4; i++) setTimeout(() => beep(300 + Math.random() * 300, .03, 'square', 0, .04), i * 45);
   if (new Set(ya.dice).size === 1) setTimeout(() => [784, 988, 1175].forEach((f, i) => setTimeout(() => beep(f, .12, 'triangle'), i * 90)), 240);
 }
-function yaPick(cat) {
+function yaPick(cat, remote) {
   if (ya.mode !== 'play' || ya.rolls === 0 || ya.sheet[cat] !== null) return;
-  ya.sheet[cat] = yaScore(cat, ya.dice); ya.lastCat = cat; if (cat === 11 && ya.sheet[cat]) yas.yams++;
+  if (!remote && yas.mode === 'net') netSend({t: 'pick', cat});
+  ya.sheet[cat] = yaScore(cat, ya.dice); ya.lastCat = cat; ya.lastBy = ya.cur; if (cat === 11 && ya.sheet[cat] && !ya.players[ya.cur].ai && ya.players[ya.cur].name !== 'Ami') yas.yams++;
   ya.rolls = 0; ya.keep = [0, 0, 0, 0, 0]; beep(ya.sheet[cat] ? 660 : 220, .08, 'triangle');
-  if (ya.sheet.every(v => v !== null)) { ya.mode = 'over'; ya.overAt = ya.tick; yas.games++; best('yams', yaTotal(ya.sheet)); saveGames(); [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, .14, 'triangle'), i * 100)); }
+  if (ya.players.every(p => p.sheet.every(v => v !== null))) {
+    ya.mode = 'over'; ya.overAt = ya.tick;
+    if (yas.mode === 'solo') { yas.games++; best('yams', yaTotal(ya.sheet)); }
+    else if (yas.mode === 'ia') { const a = yaTotal(ya.players[0].sheet), b = yaTotal(ya.players[1].sheet); yas.vs[a > b ? 'w' : a < b ? 'l' : 'd']++; }
+    else if (yas.mode === 'net') { const a = yaTotal(ya.players[net.me].sheet), b = yaTotal(ya.players[1 - net.me].sheet); yas.net[a > b ? 'w' : a < b ? 'l' : 'd']++; }
+    else yas.multi++;
+    saveGames(); [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, .14, 'triangle'), i * 100));
+  } else if (ya.players.length > 1) { ya.cur = (ya.cur + 1) % ya.players.length; ya.sheet = ya.players[ya.cur].sheet; ya.aiAt = ya.tick + 50; }
   yaInfo();
 }
 const YA_PIPS = {1: [[1, 1]], 2: [[0, 0], [2, 2]], 3: [[0, 0], [1, 1], [2, 2]], 4: [[0, 0], [2, 0], [0, 2], [2, 2]], 5: [[0, 0], [2, 0], [1, 1], [0, 2], [2, 2]], 6: [[0, 0], [2, 0], [0, 1], [2, 1], [0, 2], [2, 2]]};
@@ -368,55 +415,113 @@ const YA_BG = cnv(W, H, b => {  // tapis de feutre vert, bordure de bois, une fe
   px(b, '#05010b', 4, 60, 136, 64); px(b, '#174f34', 5, 61, 134, 62);
   px(b, '#05010b', YA.SX - 3, 2, W - YA.SX + 1, H - 4); px(b, '#f0e6d0', YA.SX - 2, 3, W - YA.SX - 1, H - 6);
   for (let i = 0; i <= 16; i++) px(b, i === 6 || i === 8 || i === 15 ? '#8a6a4a' : '#d8ccb0', YA.SX - 2, YA.SY + i * YA.RH, W - YA.SX - 1, 1);
-  px(b, '#d8ccb0', W - 34, 3, 1, H - 6);
 });
+const YA_X0 = 200, YA_CW = 85, yaColX = p => ya.players.length === 1 ? W - 18 : YA_X0 + (YA_CW / ya.players.length) * (p + .5);
 const yaRow = y => { const r = Math.floor((y - YA.SY) / YA.RH); return r < 6 ? r : r === 6 || r === 7 ? -1 : r <= 14 ? r - 2 : -1; };  // lignes 6-7 : bonus et sous-total
 function yaDraw() {
   g.drawImage(YA_BG, 0, 0);
   const rolling = ya.tick - ya.rollAt < 14;
   ya.dice.forEach((v, i) => yaDie(YA.DX + i * YA.DS + 4, YA.DY, rolling && !ya.keep[i] ? 1 + (Math.floor(ya.tick / 2) * 7 + i * 3) % 6 : v, ya.keep[i], ya.keep[i] ? 3 : rolling ? (ya.tick + i) % 3 : 0));
-  ya.keep.forEach((k, i) => { if (k) pxFont(g, 'gardé', YA.DX + i * YA.DS + 14, YA.DY + 32, '#ffd84a', 6, 'center'); });
+  ya.keep.forEach((k, i) => { if (k) { const x = YA.DX + i * YA.DS + 4; px(g, '#05010b', x + 2, YA.DY + 26, 16, 4); px(g, '#ffd84a', x + 3, YA.DY + 27, 14, 2); } });  // un trait doré sous chaque dé gardé (le mot « gardé » débordait sur le dé voisin)
+  if (ya.keep.some(Boolean)) pxFont(g, 'dés gardés', 72, YA.DY + 38, '#ffd84a', 6, 'center');
   // le bouton Lancer, dessiné dans la table
-  const can = ya.mode === 'play' && ya.rolls < 3, bx = 30, by = 140;
+  const can = yaMine() && ya.rolls < 3, bx = 30, by = 140;
   px(g, '#05010b', bx, by, 84, 20); px(g, can ? '#c08a20' : '#4a4a4a', bx + 1, by + 1, 82, 18); px(g, can ? '#ffd84a' : '#6a6a6a', bx + 1, by + 1, 82, 2); px(g, can ? '#805a10' : '#3a3a3a', bx + 1, by + 17, 82, 2);
   pxFont(g, ya.rolls === 0 ? 'LANCER' : 'RELANCER', bx + 42, by + 13, can ? '#2a1a05' : '#9a9a9a', 8, 'center');
   for (let i = 0; i < 3; i++) px(g, i < 3 - ya.rolls ? '#ffd84a' : '#0a2a1a', bx + 30 + i * 9, by + 24, 6, 3);
-  pxFont(g, ya.mode === 'over' ? 'Partie finie' : ya.rolls === 0 ? 'Lance les dés' : ya.rolls < 3 ? 'Clic sur un dé : le garder' : 'Choisis une case', 72, 46, '#c8e8d0', 6, 'center');
-  pxFont(g, 'Tour ' + Math.min(13, ya.sheet.filter(v => v !== null).length + 1) + ' / 13', 72, 24, '#ffffff', 8, 'center');
+  const P = ya.players[ya.cur], multi = ya.players.length > 1;
+  pxFont(g, ya.mode === 'wait' ? (net.code ? 'Code ' + net.code : 'Crée ou rejoins') : ya.mode === 'over' ? 'Partie finie' : P.ai ? 'L’ordinateur joue…' : P.name === 'Ami' ? 'Ton ami joue…' : ya.rolls === 0 ? 'Lance les dés' : ya.rolls < 3 ? 'Clic sur un dé : le garder' : 'Choisis une case', 72, 46, '#c8e8d0', 6, 'center');
+  pxFont(g, (multi && ya.mode === 'play' ? (P.ai ? 'Ordi' : P.name === 'Toi' ? 'À toi' : P.name === 'Ami' ? 'À ton ami' : 'À ' + P.name) + ' · ' : '') + 'Tour ' + Math.min(13, ya.sheet.filter(v => v !== null).length + 1) + ' / 13', 72, 24, multi ? '#ffd84a' : '#ffffff', 8, 'center');
+  // la feuille : une colonne par joueur, celle du joueur en cours éclairée
+  if (multi) { const cw = YA_CW / ya.players.length; if (ya.mode === 'play') px(g, '#fff4c8', YA_X0 + cw * ya.cur, 3, cw, H - 6); for (let p = 0; p <= ya.players.length; p++) px(g, '#d8ccb0', YA_X0 + cw * p - (p ? 0 : 2), 3, 1, H - 6);
+    ya.players.forEach((q, p) => pxFont(g, q.name, yaColX(p), YA.SY + 16 * YA.RH + 9, p === ya.cur && ya.mode === 'play' ? '#c02a3a' : '#4a3a3a', 6, 'center')); }
+  else px(g, '#d8ccb0', W - 34, 3, 1, H - 6);
   // la feuille de marque
   const rows = [...YA_CATS.slice(0, 6).map((c, i) => [c[0], i]), ['Bonus 63', 'b'], ['Haut', 'u'], ...YA_CATS.slice(6).map((c, i) => [c[0], i + 6]), ['TOTAL', 't']];
   rows.forEach(([name, k], r) => {
     const y = YA.SY + r * YA.RH + 9, open = typeof k === 'number' && ya.sheet[k] === null, hov = typeof k === 'number' && k === ya.hover && open && ya.rolls > 0;
-    if (hov) px(g, '#ffe9a0', YA.SX - 1, y - 8, W - YA.SX - 3, YA.RH - 1); if (k === ya.lastCat) px(g, '#e0f0d0', YA.SX - 1, y - 8, W - YA.SX - 3, YA.RH - 1);
+    if (hov) px(g, '#ffe9a0', YA.SX - 1, y - 8, multi ? YA_X0 - YA.SX - 1 : W - YA.SX - 3, YA.RH - 1); if (k === ya.lastCat && !multi) px(g, '#e0f0d0', YA.SX - 1, y - 8, W - YA.SX - 3, YA.RH - 1);
     pxFont(g, name, YA.SX + 2, y, k === 't' ? '#2a1a2a' : '#4a3a3a', 6);
-    let v = '', col = '#2a1a2a';
-    if (typeof k === 'number') { if (!open) v = String(ya.sheet[k]); else if (ya.rolls > 0 && ya.mode === 'play') { v = String(yaScore(k, ya.dice)); col = v === '0' ? '#c0a0a0' : '#2a8a4a'; } }
-    if (k === 'b') { const u = yaUpper(ya.sheet); v = u >= 63 ? '35' : u + '/63'; col = u >= 63 ? '#2a8a4a' : '#8a7a6a'; }
-    if (k === 'u') v = String(yaUpper(ya.sheet)); if (k === 't') v = String(yaTotal(ya.sheet));
-    pxFont(g, v, W - 18, y, col, 6, 'center');
+    ya.players.forEach((q, p) => {
+      const sh = q.sheet, now = p === ya.cur; let v = '', col = '#2a1a2a';
+      if (typeof k === 'number') { if (sh[k] !== null) { v = String(sh[k]); if (multi && k === ya.lastCat && p === ya.lastBy) col = '#c02a3a'; } else if (now && ya.rolls > 0 && ya.mode === 'play' && !q.ai) { v = String(yaScore(k, ya.dice)); col = v === '0' ? '#c0a0a0' : '#2a8a4a'; } }
+      if (k === 'b') { const u = yaUpper(sh); v = u >= 63 ? '35' : multi ? (u ? '-' + (63 - u) : '') : u + '/63'; col = u >= 63 ? '#2a8a4a' : '#8a7a6a'; }
+      if (k === 'u') v = String(yaUpper(sh)); if (k === 't') v = String(yaTotal(sh));
+      pxFont(g, v, yaColX(p), y, col, 6, 'center');
+    });
   });
-  if (ya.mode === 'over' && ya.tick - ya.overAt > 30) { px(g, '#05010b', 8, 168, 128, 40); px(g, '#2a1a3a', 9, 169, 126, 38); pxFont(g, yaTotal(ya.sheet) + ' points', 72, 184, '#ffd84a', 8, 'center'); pxFont(g, 'Clic : nouvelle partie', 72, 200, '#ffffff', 6, 'center'); }
+  if (ya.mode === 'over' && ya.tick - ya.overAt > 30) { px(g, '#05010b', 8, 168, 128, 40); px(g, '#2a1a3a', 9, 169, 126, 38);
+    const tot = ya.players.map(q => yaTotal(q.sheet)), top = Math.max(...tot), win = ya.players.filter((q, p) => tot[p] === top);
+    pxFont(g, !multi ? tot[0] + ' points' : win.length > 1 ? 'Égalité · ' + top : (win[0].name === 'Toi' ? 'Tu gagnes' : win[0].ai ? 'L’ordi gagne' : win[0].name === 'Ami' ? 'Ton ami gagne' : win[0].name + ' gagne') + ' · ' + top, 72, 184, '#ffd84a', multi ? 7 : 8, 'center'); pxFont(g, yas.mode === 'net' ? (net.opp ? 'Clic : revanche' : 'Ton ami est parti') : 'Clic : nouvelle partie', 72, 200, '#ffffff', 6, 'center'); }
 }
 cv.onpointermove = e => { if (!ya) return; const [x, y] = cpos(e); ya.hover = x >= YA.SX - 2 ? yaRow(y) : -1; cv.style.cursor = (ya.hover >= 0 && ya.sheet[ya.hover] === null && ya.rolls > 0) || (x >= 30 && x < 114 && y >= 140 && y < 160) ? 'pointer' : ''; };
 cv.onpointerdown = e => {
   e.preventDefault(); if (!ya) return; const [x, y] = cpos(e);
-  if (ya.mode === 'over') { if (ya.tick - ya.overAt > 30) yaNew(); return; }
+  if (ya.mode === 'over') { if (ya.tick - ya.overAt > 30) { if (yas.mode === 'net') netAgain(); else yaNew(); } return; }
+  if (!yaMine()) return;
   if (x >= YA.SX - 2) { const r = yaRow(y); if (r >= 0) yaPick(r); return; }
   if (x >= 30 && x < 114 && y >= 140 && y < 160) return yaRoll();
-  const i = Math.floor((x - YA.DX - 4) / YA.DS); if (ya.rolls > 0 && ya.rolls < 3 && i >= 0 && i < 5 && y >= YA.DY - 4 && y < YA.DY + 26) { ya.keep[i] ^= 1; beep(ya.keep[i] ? 880 : 440, .03, 'square', 0, .04); }
+  const i = Math.floor((x - YA.DX - 4) / YA.DS); if (ya.rolls > 0 && ya.rolls < 3 && i >= 0 && i < 5 && y >= YA.DY - 4 && y < YA.DY + 26) { ya.keep[i] ^= 1; beep(ya.keep[i] ? 880 : 440, .03, 'square', 0, .04); if (yas.mode === 'net') netSend({t: 'keep', keep: ya.keep}); }
 };
 document.addEventListener('keydown', e => {
   if (!keyOk(e) || !ya) return;
-  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (ya.mode === 'over') yaNew(); else yaRoll(); }
-  const n = '12345'.indexOf(e.key); if (n >= 0 && ya.rolls > 0 && ya.rolls < 3) { ya.keep[n] ^= 1; beep(ya.keep[n] ? 880 : 440, .03, 'square', 0, .04); }
+  if ((e.key === ' ' || e.key === 'Enter') && ya.mode === 'over') { e.preventDefault(); if (yas.mode === 'net') netAgain(); else yaNew(); return; }
+  if (!yaMine()) return;
+  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); yaRoll(); }
+  const n = '12345'.indexOf(e.key); if (n >= 0 && ya.rolls > 0 && ya.rolls < 3) { ya.keep[n] ^= 1; beep(ya.keep[n] ? 880 : 440, .03, 'square', 0, .04); if (yas.mode === 'net') netSend({t: 'keep', keep: ya.keep}); }
 });
-function yaInfo() { showStats([['Meilleur total', games.best.yams || 0], ['Parties', yas.games], ['Yams réussis', yas.yams]]); }
+function yaInfo() {
+  if (yas.mode === 'net') showStats([['Gagnées à distance', yas.net.w], ['Perdues', yas.net.l], ['Égalités', yas.net.d], ['Yams réussis', yas.yams]]);
+  else if (yas.mode === 'ia') showStats([['Contre l’ordinateur', yas.vs.w + ' gagnées · ' + yas.vs.l + ' perdues' + (yas.vs.d ? ' · ' + yas.vs.d + ' nulles' : '')], ['Yams réussis', yas.yams]]);
+  else if (yas.mode !== 'solo') showStats([['Parties à plusieurs', yas.multi], ['Yams réussis', yas.yams]]);
+  else showStats([['Meilleur total', games.best.yams || 0], ['Parties', yas.games], ['Yams réussis', yas.yams]]);
+  $('yaMode').value = yas.mode; $('yaNet').style.display = yas.mode === 'net' ? '' : 'none'; }
+$('yaMode').onchange = () => { netLeave(); yas.mode = YA_MODES[$('yaMode').value] ? $('yaMode').value : 'solo'; saveGames(); yaNew(); $('yaMode').blur(); if (yas.mode === 'net') netSay('Crée une partie et donne son code à ton ami, ou tape le sien.'); };
+const netLeave = () => { if (net.code) try { ctx.room.leave().catch(() => {}); } catch {} Object.assign(net, {code: '', me: 0, host: false, opp: '', oppId: '', first: 0}); };
+function netStart(first) { yaNew(first); netSay('Contre ' + net.opp + ' · ' + (first === net.me ? 'tu commences' : 'ton ami commence') + ' · code ' + net.code); }
+function netAgain() {  // l'hôte lance la partie (et la revanche, en changeant qui commence) ; l'invité la demande
+  if (!netOn()) return;
+  if (net.host) { const f = net.first; net.first = 1 - f; ctx.room.send({t: 'start', first: f}).catch(() => {}); netStart(f); } else ctx.room.send({t: 'rejouer'}).catch(() => {});
+}
+ctx.room?.on(ev => {
+  if (yas.mode !== 'net' || !net.code) return;
+  if (ev.t === 'arrive') {
+    if (!net.host) return;
+    if (net.opp) return void ctx.room.send({t: 'pleine'}, ev.id).catch(() => {});
+    net.opp = ev.name || 'ton ami'; net.oppId = ev.id; sfx?.('notify'); netAgain();
+  } else if (ev.t === 'part' && ev.id === net.oppId || ev.t === 'fin') {
+    netSay(ev.t === 'fin' ? 'Connexion perdue avec le serveur de parties.' : 'Ton ami a quitté la partie.' + (net.host ? ' Le code reste valable : il peut revenir.' : ''));
+    net.opp = ''; net.oppId = ''; if (ev.t === 'fin') net.code = ''; if (ya && ya.mode === 'play') ya.mode = 'wait';
+  } else if (ev.t === 'msg' && ev.from === net.oppId) {
+    const m = ev.data || {}, theirs = ya && ya.mode === 'play' && ya.cur !== net.me;
+    if (m.t === 'start' && !net.host) netStart(m.first === 1 ? 1 : 0);
+    else if (m.t === 'rejouer' && net.host && ya.mode === 'over') netAgain();
+    else if (m.t === 'pleine') { netSay('Cette partie a déjà deux joueurs.'); netLeave(); yaNew(); }
+    else if (m.t === 'roll' && theirs && yaDiceOk(m.dice) && yaKeepOk(m.keep)) { ya.keep = m.keep; yaRoll(m.dice); }
+    else if (m.t === 'keep' && theirs && yaKeepOk(m.keep)) ya.keep = m.keep;
+    else if (m.t === 'pick' && theirs && Number.isInteger(m.cat) && m.cat >= 0 && m.cat < 13) yaPick(m.cat, true);
+  }
+});
+$('yaHost').onclick = async () => { $('yaHost').blur();
+  try { netLeave(); const r = await ctx.room.create('hôte'); Object.assign(net, {code: r.code, host: true, me: 0}); yaNew(); netSay('Code de la partie : ' + r.code + ' · donne-le à ton ami. En attente…'); }
+  catch (e) { netSay('Impossible de créer la partie : ' + e.message); } };
+$('yaJoin').onclick = async () => { $('yaJoin').blur();
+  try { netLeave(); const r = await ctx.room.join($('yaCode').value, 'invité'), host = r.joueurs.find(j => j.host);
+    if (!host || r.joueurs.length > 1) { await ctx.room.leave(); return netSay(host ? 'Cette partie a déjà deux joueurs.' : 'Aucune partie avec ce code.'); }
+    Object.assign(net, {code: r.code, host: false, me: 1, opp: host.name || 'ton ami', oppId: host.id}); yaNew(); netSay('Connecté · la partie commence…'); }
+  catch (e) { netSay('Impossible de rejoindre : ' + e.message); } };
+$('yaCode').onkeydown = e => { if (e.key === 'Enter') $('yaJoin').click(); };
 $('gNew').onclick = () => { yaNew(); $('gNew').blur(); };
 {  // vérification des cases difficiles et du bonus
   const t = [yaScore(8, [2, 2, 3, 3, 3]) === 25, yaScore(9, [1, 2, 3, 4, 6]) === 30, yaScore(9, [1, 2, 4, 5, 6]) === 0, yaScore(10, [2, 3, 4, 5, 6]) === 40, yaScore(7, [4, 4, 4, 4, 1]) === 17, yaScore(11, [6, 6, 6, 6, 6]) === 50, yaScore(6, [1, 1, 2, 3, 4]) === 0, yaScore(2, [3, 3, 1, 3, 5]) === 9,
     yaTotal([3, 6, 9, 12, 15, 18, ...Array(7).fill(0)]) === 63 + 35];
+  // l'ordinateur : il garde la suite presque faite, sinon ses dés les plus nombreux ; il marque le Yams quand il l'a, barre la bonne case quand rien ne va
+  const S = Array(13).fill(null), S2 = [3, 6, 9, 12, 15, 18, 20, 18, 25, 30, null, 50, 22];
+  t.push(yaAiKeep([2, 3, 4, 5, 2], S).join('') === '11110', yaAiKeep([6, 6, 1, 3, 6], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, null, null]).join('') === '11001', yaAiPick([5, 5, 5, 5, 5], S) === 11, yaAiPick([1, 2, 3, 4, 5], S) === 10, yaAiPick([1, 1, 2, 3, 6], S2) === 10);
+  cv.dataset.selfcheck = t.every(Boolean) ? 'ok' : 'cas ' + t.map((v, i) => v ? '' : i).filter(String).join(',');
   console.assert(t.every(Boolean), 'yams', t);
 }
-ctx.onOpen(() => { if (!ya) yaNew(); gameLoop(ya, 'yams', () => {}, yaDraw); yaInfo(); });
+cv.__ya = {st: () => ya, yas: () => yas, net: () => net, YA, colX: p => yaColX(p)};
+ctx.onOpen(() => { if (!ya) yaNew(); gameLoop(ya, 'yams', yaUpdate, yaDraw); yaInfo(); });
 
 }
