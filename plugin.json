@@ -1,7 +1,7 @@
 {
   "id": "neodex.yams",
   "name": "Yams",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "author": "NDesumeur",
   "description": "Le jeu de dés en solo : cinq dés, trois lancers par tour en gardant ceux que tu veux, et treize cases à remplir (chiffres, brelan, carré, full, suites, Yams, chance). La feuille montre ce que rapporterait chaque case, 63 points en haut donnent 35 de bonus, et une case peut être sacrifiée à 0. Au clavier ou à la souris. Le jeu de dés seul, contre l'ordinateur ou jusqu'à 4 sur le même PC (une colonne par joueur) : cinq dés, trois lancers par tour en gardant ceux que tu veux, et treize cases à remplir (chiffres, brelan, carré, full, suites, Yams, chance). La feuille montre ce que rapporterait chaque case, 63 points en haut donnent 35 de bonus, et une case peut être sacrifiée à 0. Au clavier ou à la souris Et à distance par un code, contre un ami sur un autre PC : chacun lance ses dés chez lui, la feuille avance des deux côtés.",
   "icon": "icon.png",
@@ -23,5 +23,72 @@
   "permissions": [
     "storage",
     "rooms"
+  ],
+  "succes": [
+    {
+      "id": "premier",
+      "nom": "Feuille remplie",
+      "texte": "Terminer une partie en solo"
+    },
+    {
+      "id": "s200",
+      "nom": "Bonne main",
+      "texte": "Marquer 200 points en solo"
+    },
+    {
+      "id": "s250",
+      "nom": "Main de maître",
+      "texte": "Marquer 250 points en solo"
+    },
+    {
+      "id": "s300",
+      "nom": "Les dés t'obéissent",
+      "texte": "Marquer 300 points en solo",
+      "cache": true
+    },
+    {
+      "id": "yams",
+      "nom": "Yams !",
+      "texte": "Faire un premier Yams"
+    },
+    {
+      "id": "yams10",
+      "nom": "Cinq de pareil",
+      "texte": "Faire 10 Yams"
+    },
+    {
+      "id": "bonus",
+      "nom": "Le haut de la feuille",
+      "texte": "Obtenir les 35 points de bonus"
+    },
+    {
+      "id": "ia",
+      "nom": "Plus fort que la machine",
+      "texte": "Battre l'ordinateur"
+    },
+    {
+      "id": "ia10",
+      "nom": "Champion du gobelet",
+      "texte": "Battre 10 fois l'ordinateur"
+    },
+    {
+      "id": "ami",
+      "nom": "Entre amis",
+      "texte": "Gagner une partie en ligne contre un ami"
+    }
+  ],
+  "records": [
+    {
+      "id": "solo",
+      "nom": "Meilleur score en solo",
+      "sens": "haut",
+      "format": "nombre"
+    },
+    {
+      "id": "yams",
+      "nom": "Yams faits",
+      "sens": "haut",
+      "format": "nombre"
+    }
   ]
 }

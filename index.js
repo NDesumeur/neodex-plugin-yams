@@ -299,6 +299,9 @@ export default async function (ctx) {
   const saveGames = () => { clearTimeout(gamesTimer); gamesTimer = setTimeout(() => { gamesTimer = null; folder.write('games', games).catch(() => {}); }, 500); };
   const best = (k, v) => { const b = games.best[k]; if (b == null || v > b) { games.best[k] = v; saveGames(); return true; } return false; };
   const gstore = (k, init) => (games[k] ??= init);
+  // les trophées de NeoDex (3.4.8 et plus) : succès et records déclarés dans plugin.json ; sur un NeoDex plus ancien, rien ne se passe
+  const trophy = id => { ctx.games?.unlock(id).catch(() => {}); };
+  const trophyRecord = (id, v) => { if (v != null && Number.isFinite(+v)) ctx.games?.record(id, +v).catch(() => {}); };
 function gameLoop(st, appKey, update, draw) {
   cancelAnimationFrame(st.raf);
   const STEP = 1000 / 60; let acc = 0, last = performance.now();
@@ -390,7 +393,7 @@ function yaRoll(got) {  // got : les dés tirés par l'ami, chez lui
 function yaPick(cat, remote) {
   if (ya.mode !== 'play' || ya.rolls === 0 || ya.sheet[cat] !== null) return;
   if (!remote && yas.mode === 'net') netSend({t: 'pick', cat});
-  ya.sheet[cat] = yaScore(cat, ya.dice); ya.lastCat = cat; ya.lastBy = ya.cur; if (cat === 11 && ya.sheet[cat] && !ya.players[ya.cur].ai && ya.players[ya.cur].name !== 'Ami') yas.yams++;
+  ya.sheet[cat] = yaScore(cat, ya.dice); ya.lastCat = cat; ya.lastBy = ya.cur; if (cat === 11 && ya.sheet[cat] && !ya.players[ya.cur].ai && ya.players[ya.cur].name !== 'Ami') { yas.yams++; yaTrophies(); }
   ya.rolls = 0; ya.keep = [0, 0, 0, 0, 0]; beep(ya.sheet[cat] ? 660 : 220, .08, 'triangle');
   if (ya.players.every(p => p.sheet.every(v => v !== null))) {
     ya.mode = 'over'; ya.overAt = ya.tick;
@@ -398,7 +401,8 @@ function yaPick(cat, remote) {
     else if (yas.mode === 'ia') { const a = yaTotal(ya.players[0].sheet), b = yaTotal(ya.players[1].sheet); yas.vs[a > b ? 'w' : a < b ? 'l' : 'd']++; }
     else if (yas.mode === 'net') { const a = yaTotal(ya.players[net.me].sheet), b = yaTotal(ya.players[1 - net.me].sheet); yas.net[a > b ? 'w' : a < b ? 'l' : 'd']++; }
     else yas.multi++;
-    saveGames(); [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, .14, 'triangle'), i * 100));
+    if (yaUpper((yas.mode === 'net' ? ya.players[net.me] : ya.players[0]).sheet) >= 63) yas.bonus = 1;
+    saveGames(); [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, .14, 'triangle'), i * 100)); yaTrophies();
   } else if (ya.players.length > 1) { ya.cur = (ya.cur + 1) % ya.players.length; ya.sheet = ya.players[ya.cur].sheet; ya.aiAt = ya.tick + 50; }
   yaInfo();
 }
@@ -522,6 +526,14 @@ $('gNew').onclick = () => { yaNew(); $('gNew').blur(); };
   console.assert(t.every(Boolean), 'yams', t);
 }
 cv.__ya = {st: () => ya, yas: () => yas, net: () => net, YA, colX: p => yaColX(p)};
-ctx.onOpen(() => { if (!ya) yaNew(); gameLoop(ya, 'yams', yaUpdate, yaDraw); yaInfo(); });
+// les trophées, tirés des statistiques et des records gardés (aussi à l'ouverture : ce qui a été fait avant compte)
+function yaTrophies() {
+  const b = games.best.yams;
+  trophyRecord('solo', b); trophyRecord('yams', yas.yams || null);
+  if (yas.games >= 1) trophy('premier'); if (b >= 200) trophy('s200'); if (b >= 250) trophy('s250'); if (b >= 300) trophy('s300');
+  if (yas.yams >= 1) trophy('yams'); if (yas.yams >= 10) trophy('yams10'); if (yas.bonus) trophy('bonus');
+  if (yas.vs.w >= 1) trophy('ia'); if (yas.vs.w >= 10) trophy('ia10'); if (yas.net?.w >= 1) trophy('ami');
+}
+ctx.onOpen(() => { if (!ya) yaNew(); gameLoop(ya, 'yams', yaUpdate, yaDraw); yaInfo(); yaTrophies(); });
 
 }
